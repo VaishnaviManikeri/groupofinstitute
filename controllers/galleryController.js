@@ -13,9 +13,52 @@ const isValidUrl = (url) => {
 
 // Helper function to detect media type from URL
 const detectMediaTypeFromUrl = (url) => {
-  const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.youtube', '.youtu.be', 'vimeo'];
+  const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.ogg'];
+  const videoPlatforms = ['youtube.com', 'youtu.be', 'vimeo.com', 'dailymotion.com'];
   const lowerUrl = url.toLowerCase();
-  return videoExtensions.some(ext => lowerUrl.includes(ext)) ? 'video' : 'image';
+  
+  // Check for video platforms
+  if (videoPlatforms.some(platform => lowerUrl.includes(platform))) {
+    return 'video';
+  }
+  
+  // Check for direct video file extensions
+  if (videoExtensions.some(ext => lowerUrl.includes(ext))) {
+    return 'video';
+  }
+  
+  return 'image';
+};
+
+// Helper function to extract YouTube ID
+const extractYoutubeId = (url) => {
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+};
+
+// Helper function to get video embed URL
+const getVideoEmbedUrl = (url) => {
+  const lowerUrl = url.toLowerCase();
+  
+  // YouTube
+  if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) {
+    const videoId = extractYoutubeId(url);
+    if (videoId) {
+      return `https://www.youtube.com/embed/${videoId}`;
+    }
+  }
+  
+  // Vimeo
+  if (lowerUrl.includes('vimeo.com')) {
+    const vimeoId = url.split('vimeo.com/')[1];
+    if (vimeoId) {
+      return `https://player.vimeo.com/video/${vimeoId}`;
+    }
+  }
+  
+  // Direct video URL
+  return url;
 };
 
 // @desc    Get all gallery items
@@ -24,7 +67,19 @@ const detectMediaTypeFromUrl = (url) => {
 const getGalleryItems = async (req, res) => {
   try {
     const items = await Gallery.find().sort({ createdAt: -1 });
-    res.json(items);
+    
+    // Add embed URLs for videos
+    const itemsWithEmbed = items.map(item => {
+      if (item.mediaType === 'video') {
+        return {
+          ...item.toObject(),
+          embedUrl: getVideoEmbedUrl(item.mediaUrl)
+        };
+      }
+      return item;
+    });
+    
+    res.json(itemsWithEmbed);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -38,7 +93,11 @@ const getGalleryItemById = async (req, res) => {
   try {
     const item = await Gallery.findById(req.params.id);
     if (item) {
-      res.json(item);
+      const responseItem = item.toObject();
+      if (item.mediaType === 'video') {
+        responseItem.embedUrl = getVideoEmbedUrl(item.mediaUrl);
+      }
+      res.json(responseItem);
     } else {
       res.status(404).json({ message: 'Item not found' });
     }
@@ -65,29 +124,31 @@ const createGalleryItem = async (req, res) => {
       finalMediaUrl = mediaUrl;
       finalMediaType = mediaType || detectMediaTypeFromUrl(mediaUrl);
       
-      // For YouTube/Vimeo URLs, you might want to generate a thumbnail
+      // For YouTube/Vimeo URLs, generate thumbnail
       if (finalMediaType === 'video') {
         if (mediaUrl.includes('youtube.com') || mediaUrl.includes('youtu.be')) {
           const videoId = extractYoutubeId(mediaUrl);
-          thumbnailUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
-        } else if (mediaUrl.includes('vimeo.com')) {
-          // You would need Vimeo API for thumbnail
-          thumbnailUrl = ''; // Placeholder
+          if (videoId) {
+            thumbnailUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+          }
         }
       }
     }
     // Case 2: File upload
     else if (req.file) {
-      finalMediaUrl = req.file.path;
-      cloudinaryId = req.file.filename;
-      
-      // Determine if it's video based on file type
+      // Cloudinary returns different URL formats for images and videos
       if (req.file.mimetype.startsWith('video/')) {
         finalMediaType = 'video';
-        // Generate thumbnail for video (you might need additional processing)
-        thumbnailUrl = ''; // Placeholder for video thumbnail
+        // For videos, Cloudinary returns a URL that needs to be properly formatted
+        finalMediaUrl = req.file.path; // This should be the Cloudinary URL
+        cloudinaryId = req.file.filename;
+        
+        // Generate thumbnail URL from Cloudinary video
+        thumbnailUrl = req.file.path.replace('/upload/', '/upload/w_400,h_300,c_fill/');
       } else {
         finalMediaType = 'image';
+        finalMediaUrl = req.file.path;
+        cloudinaryId = req.file.filename;
       }
     }
     else {
@@ -104,18 +165,17 @@ const createGalleryItem = async (req, res) => {
       thumbnailUrl
     });
 
-    res.status(201).json(galleryItem);
+    // Add embedUrl for video response
+    const responseItem = galleryItem.toObject();
+    if (galleryItem.mediaType === 'video') {
+      responseItem.embedUrl = getVideoEmbedUrl(galleryItem.mediaUrl);
+    }
+
+    res.status(201).json(responseItem);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
-};
-
-// Helper function to extract YouTube ID
-const extractYoutubeId = (url) => {
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-  const match = url.match(regExp);
-  return (match && match[2].length === 11) ? match[2] : null;
 };
 
 // @desc    Update gallery item
@@ -143,7 +203,9 @@ const updateGalleryItem = async (req, res) => {
       if (item.mediaType === 'video') {
         if (item.mediaUrl.includes('youtube.com') || item.mediaUrl.includes('youtu.be')) {
           const videoId = extractYoutubeId(item.mediaUrl);
-          item.thumbnailUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+          if (videoId) {
+            item.thumbnailUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+          }
         }
       }
     }
@@ -159,10 +221,22 @@ const updateGalleryItem = async (req, res) => {
       item.mediaUrl = req.file.path;
       item.cloudinaryId = req.file.filename;
       item.mediaType = req.file.mimetype.startsWith('video/') ? 'video' : 'image';
+      
+      // Generate thumbnail for videos
+      if (item.mediaType === 'video') {
+        item.thumbnailUrl = req.file.path.replace('/upload/', '/upload/w_400,h_300,c_fill/');
+      }
     }
 
     const updatedItem = await item.save();
-    res.json(updatedItem);
+    
+    // Add embedUrl for video response
+    const responseItem = updatedItem.toObject();
+    if (updatedItem.mediaType === 'video') {
+      responseItem.embedUrl = getVideoEmbedUrl(updatedItem.mediaUrl);
+    }
+
+    res.json(responseItem);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
