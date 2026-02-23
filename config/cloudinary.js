@@ -8,15 +8,43 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-const storage = new CloudinaryStorage({
+// Storage for images
+const imageStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
-    folder: 'college_website',
+    folder: 'college_website/images',
     allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
     transformation: [{ width: 1000, height: 1000, crop: 'limit' }]
   }
 });
 
-const upload = multer({ storage: storage });
+// Storage for videos
+const videoStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'college_website/videos',
+    allowed_formats: ['mp4', 'mov', 'avi', 'mkv', 'webm'],
+    resource_type: 'video',
+    transformation: [
+      { width: 1000, crop: 'limit' },
+      { quality: 'auto' }
+    ]
+  }
+});
 
-module.exports = { cloudinary, upload };
+const uploadImage = multer({ storage: imageStorage });
+const uploadVideo = multer({ storage: videoStorage });
+
+// Generic upload middleware that handles both
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, '/tmp'); // Temporary storage
+    },
+    filename: (req, file, cb) => {
+      cb(null, Date.now() + '-' + file.originalname);
+    }
+  })
+});
+
+module.exports = { cloudinary, uploadImage, uploadVideo, upload };

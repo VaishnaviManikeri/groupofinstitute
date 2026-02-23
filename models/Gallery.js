@@ -6,11 +6,17 @@ const gallerySchema = new mongoose.Schema({
     required: true
   },
   description: String,
-  imageUrl: {
+  mediaUrl: {
     type: String,
     required: true
   },
+  mediaType: {
+    type: String,
+    enum: ['image', 'video'],
+    default: 'image'
+  },
   cloudinaryId: String,
+  thumbnailUrl: String, // For videos
   category: {
     type: String,
     default: 'general'

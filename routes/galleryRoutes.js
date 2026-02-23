@@ -1,22 +1,22 @@
 const express = require('express');
 const router = express.Router();
 const {
-  getGalleryImages,
-  getGalleryImageById,
-  createGalleryImage,
-  updateGalleryImage,
-  deleteGalleryImage
+  getGalleryItems,
+  getGalleryItemById,
+  createGalleryItem,
+  updateGalleryItem,
+  deleteGalleryItem
 } = require('../controllers/galleryController');
 const { protect } = require('../middleware/auth');
 const { upload } = require('../config/cloudinary');
 
 router.route('/')
-  .get(getGalleryImages)
-  .post(protect, upload.single('image'), createGalleryImage);
+  .get(getGalleryItems)
+  .post(protect, upload.single('media'), createGalleryItem);
 
 router.route('/:id')
-  .get(getGalleryImageById)
-  .put(protect, upload.single('image'), updateGalleryImage)
-  .delete(protect, deleteGalleryImage);
+  .get(getGalleryItemById)
+  .put(protect, upload.single('media'), updateGalleryItem)
+  .delete(protect, deleteGalleryItem);
 
 module.exports = router;
