@@ -29,7 +29,10 @@ app.use(express.urlencoded({ extended: true }));
 
 // CORS Configuration (Important for frontend connection)
 app.use(cors({
-  origin: "*", // You can replace * with your frontend URL later
+  origin: [
+    "https://www.jadhavargroupofinstitute.in",
+    "http://localhost:3000"
+  ], // You can replace * with your frontend URL later
   methods: ["GET", "POST", "PUT", "DELETE"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
