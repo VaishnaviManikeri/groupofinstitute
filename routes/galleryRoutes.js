@@ -1,28 +1,29 @@
 const express = require('express');
 const router = express.Router();
+const { protect } = require('../middleware/auth');
+const { uploadImage, uploadVideo } = require('../config/cloudinary');
 const {
   getGalleryItems,
   getGalleryItemById,
   createGalleryItem,
+  createGalleryItemFromUrl,
   updateGalleryItem,
-  deleteGalleryItem
+  deleteGalleryItem,
+  getAdminGalleryItems,
+  getCategories
 } = require('../controllers/galleryController');
-const { protect } = require('../middleware/auth');
-const { uploadToCloudinary } = require('../config/cloudinary');
 
-// Debug middleware to log requests
-router.use((req, res, next) => {
-  console.log(`Gallery Route: ${req.method} ${req.originalUrl}`);
-  next();
-});
+// Public routes
+router.get('/', getGalleryItems);
+router.get('/categories', getCategories);
+router.get('/:id', getGalleryItemById);
 
-router.route('/')
-  .get(getGalleryItems)
-  .post(protect, uploadToCloudinary, createGalleryItem);
-
-router.route('/:id')
-  .get(getGalleryItemById)
-  .put(protect, uploadToCloudinary, updateGalleryItem)
-  .delete(protect, deleteGalleryItem);
+// Admin routes
+router.get('/admin/all', protect, getAdminGalleryItems);
+router.post('/from-url', protect, createGalleryItemFromUrl);
+router.post('/image', protect, uploadImage.single('file'), createGalleryItem);
+router.post('/video', protect, uploadVideo.single('file'), createGalleryItem);
+router.put('/:id', protect, updateGalleryItem);
+router.delete('/:id', protect, deleteGalleryItem);
 
 module.exports = router;

@@ -10,8 +10,8 @@ dotenv.config();
 connectDB();
 
 // Import route files
-const authRoutes = require('./routes/authRoutes');
 const galleryRoutes = require('./routes/galleryRoutes');
+const authRoutes = require('./routes/authRoutes');
 const announcementRoutes = require('./routes/announcementRoutes');
 const noticeRoutes = require('./routes/noticeRoutes');
 const blogRoutes = require('./routes/blogRoutes');
@@ -56,11 +56,12 @@ app.get('/', (req, res) => {
     apiBase: "/api",
     endpoints: [
       "/api/auth",
-      "/api/gallery",
       "/api/announcements",
       "/api/notices",
       "/api/blogs",
-      "/api/careers"
+      "/api/careers",
+        "/api/gallery"
+
     ]
   });
 });
@@ -69,9 +70,8 @@ app.get('/', (req, res) => {
 // =============================
 // API ROUTES
 // =============================
-
-app.use('/api/auth', authRoutes);
 app.use('/api/gallery', galleryRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/announcements', announcementRoutes);
 app.use('/api/notices', noticeRoutes);
 app.use('/api/blogs', blogRoutes);

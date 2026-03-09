@@ -1,30 +1,62 @@
 const mongoose = require('mongoose');
 
-const gallerySchema = new mongoose.Schema({
+const galleryItemSchema = new mongoose.Schema({
   title: {
     type: String,
-    required: true
+    required: true,
+    trim: true
   },
-  description: String,
-  mediaUrl: {
+  description: {
     type: String,
-    required: true
+    trim: true
   },
-  mediaType: {
+  type: {
     type: String,
     enum: ['image', 'video'],
-    default: 'image'
+    required: true
   },
-  cloudinaryId: String,
-  thumbnailUrl: String, // For videos
+  url: {
+    type: String,
+    required: true
+  },
+  cloudinaryId: {
+    type: String
+  },
+  thumbnail: {
+    type: String
+  },
+  sourceType: {
+    type: String,
+    enum: ['upload', 'url'],
+    default: 'upload'
+  },
   category: {
     type: String,
     default: 'general'
   },
-  createdAt: {
-    type: Date,
-    default: Date.now
+  tags: [String],
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  views: {
+    type: Number,
+    default: 0
+  },
+  order: {
+    type: Number,
+    default: 0
+  },
+  uploadedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Admin'
   }
+}, {
+  timestamps: true
 });
 
-module.exports = mongoose.model('Gallery', gallerySchema);
+// Index for better search performance
+galleryItemSchema.index({ title: 'text', description: 'text', tags: 'text' });
+galleryItemSchema.index({ type: 1, isActive: 1, order: -1 });
+
+module.exports = mongoose.model('Gallery', galleryItemSchema);

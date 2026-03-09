@@ -1,81 +1,36 @@
 const Gallery = require('../models/Gallery');
 const { cloudinary } = require('../config/cloudinary');
-const validator = require('validator');
-
-// Helper function to validate URL
-const isValidUrl = (url) => {
-  return validator.isURL(url, {
-    protocols: ['http', 'https'],
-    require_protocol: true
-  });
-};
-
-// Helper function to detect media type from URL
-const detectMediaTypeFromUrl = (url) => {
-  const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.ogg'];
-  const videoPlatforms = ['youtube.com', 'youtu.be', 'vimeo.com', 'dailymotion.com'];
-  const lowerUrl = url.toLowerCase();
-  
-  if (videoPlatforms.some(platform => lowerUrl.includes(platform))) {
-    return 'video';
-  }
-  
-  if (videoExtensions.some(ext => lowerUrl.includes(ext))) {
-    return 'video';
-  }
-  
-  return 'image';
-};
-
-// Helper function to extract YouTube ID
-const extractYoutubeId = (url) => {
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-  const match = url.match(regExp);
-  return (match && match[2].length === 11) ? match[2] : null;
-};
-
-// Helper function to get video embed URL
-const getVideoEmbedUrl = (url) => {
-  const lowerUrl = url.toLowerCase();
-  
-  if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) {
-    const videoId = extractYoutubeId(url);
-    if (videoId) {
-      return `https://www.youtube.com/embed/${videoId}`;
-    }
-  }
-  
-  if (lowerUrl.includes('vimeo.com')) {
-    const vimeoId = url.split('vimeo.com/')[1]?.split('?')[0];
-    if (vimeoId) {
-      return `https://player.vimeo.com/video/${vimeoId}`;
-    }
-  }
-  
-  return url;
-};
+const axios = require('axios');
 
 // @desc    Get all gallery items
 // @route   GET /api/gallery
 // @access  Public
 const getGalleryItems = async (req, res) => {
   try {
-    const items = await Gallery.find().sort({ createdAt: -1 });
-    
-    const itemsWithEmbed = items.map(item => {
-      const itemObj = item.toObject();
-      if (item.mediaType === 'video') {
-        return {
-          ...itemObj,
-          embedUrl: getVideoEmbedUrl(item.mediaUrl)
-        };
-      }
-      return itemObj;
+    const { type, category, search, page = 1, limit = 20 } = req.query;
+    const query = { isActive: true };
+
+    if (type) query.type = type;
+    if (category) query.category = category;
+    if (search) {
+      query.$text = { $search: search };
+    }
+
+    const items = await Gallery.find(query)
+      .sort({ order: -1, createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await Gallery.countDocuments(query);
+
+    res.json({
+      items,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
+      total
     });
-    
-    res.json(itemsWithEmbed);
   } catch (error) {
-    console.error('Error fetching gallery items:', error);
+    console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
 };
@@ -86,89 +41,128 @@ const getGalleryItems = async (req, res) => {
 const getGalleryItemById = async (req, res) => {
   try {
     const item = await Gallery.findById(req.params.id);
-    if (!item) {
-      return res.status(404).json({ message: 'Item not found' });
-    }
     
-    const responseItem = item.toObject();
-    if (item.mediaType === 'video') {
-      responseItem.embedUrl = getVideoEmbedUrl(item.mediaUrl);
+    if (!item) {
+      return res.status(404).json({ message: 'Gallery item not found' });
     }
-    res.json(responseItem);
+
+    // Increment views
+    item.views += 1;
+    await item.save();
+
+    res.json(item);
   } catch (error) {
-    console.error('Error fetching gallery item:', error);
+    console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
 };
 
-// @desc    Create gallery item
+// @desc    Create gallery item (upload from file)
 // @route   POST /api/gallery
 // @access  Private/Admin
 const createGalleryItem = async (req, res) => {
   try {
-    const { title, description, category, mediaType, mediaUrl } = req.body;
+    const { title, description, type, category, tags, sourceType = 'upload' } = req.body;
     
-    let finalMediaUrl = '';
-    let finalMediaType = mediaType || 'image';
-    let cloudinaryId = null;
-    let thumbnailUrl = null;
+    let url = '';
+    let cloudinaryId = '';
+    let thumbnail = '';
 
-    // Case 1: URL provided
-    if (mediaUrl && isValidUrl(mediaUrl)) {
-      finalMediaUrl = mediaUrl;
-      finalMediaType = mediaType || detectMediaTypeFromUrl(mediaUrl);
-      
-      if (finalMediaType === 'video') {
-        if (mediaUrl.includes('youtube.com') || mediaUrl.includes('youtu.be')) {
-          const videoId = extractYoutubeId(mediaUrl);
-          if (videoId) {
-            thumbnailUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
-          }
-        }
-      }
-    }
-    // Case 2: File upload via Cloudinary
-    else if (req.file) {
-      // Cloudinary stores the URL in req.file.path and public_id in req.file.filename
-      finalMediaUrl = req.file.path;
+    if (req.file) {
+      // File uploaded through multer
+      url = req.file.path;
       cloudinaryId = req.file.filename;
-      finalMediaType = req.file.mimetype.startsWith('video/') ? 'video' : 'image';
       
-      // Generate thumbnail for videos
-      if (finalMediaType === 'video') {
-        // Cloudinary video thumbnail URL format
-        thumbnailUrl = req.file.path.replace('/upload/', '/upload/w_400,h_300,c_fill/');
+      // For videos, generate thumbnail (Cloudinary provides it automatically)
+      if (type === 'video') {
+        thumbnail = cloudinary.url(cloudinaryId, {
+          resource_type: 'video',
+          format: 'jpg',
+          transformation: [{ width: 400, height: 300, crop: 'fill' }]
+        });
       }
-    }
-    else {
-      return res.status(400).json({ message: 'Please provide a file or valid URL' });
-    }
-
-    // Validate required fields
-    if (!title) {
-      return res.status(400).json({ message: 'Title is required' });
+    } else {
+      return res.status(400).json({ message: 'No file uploaded' });
     }
 
-    const galleryItem = await Gallery.create({
+    const galleryItem = new Gallery({
       title,
-      description: description || '',
-      category: category || 'general',
-      mediaUrl: finalMediaUrl,
-      mediaType: finalMediaType,
+      description,
+      type,
+      url,
       cloudinaryId,
-      thumbnailUrl
+      thumbnail,
+      sourceType,
+      category: category || 'general',
+      tags: tags ? tags.split(',').map(tag => tag.trim()) : [],
+      uploadedBy: req.admin._id
     });
 
-    const responseItem = galleryItem.toObject();
-    if (galleryItem.mediaType === 'video') {
-      responseItem.embedUrl = getVideoEmbedUrl(galleryItem.mediaUrl);
+    const createdItem = await galleryItem.save();
+    res.status(201).json(createdItem);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// @desc    Create gallery item from URL
+// @route   POST /api/gallery/from-url
+// @access  Private/Admin
+const createGalleryItemFromUrl = async (req, res) => {
+  try {
+    const { title, description, type, url, category, tags } = req.body;
+
+    if (!url) {
+      return res.status(400).json({ message: 'URL is required' });
     }
 
-    res.status(201).json(responseItem);
+    // Validate URL format
+    try {
+      new URL(url);
+    } catch (err) {
+      return res.status(400).json({ message: 'Invalid URL format' });
+    }
+
+    // For videos, try to extract video ID from YouTube/Vimeo if needed
+    let thumbnail = '';
+    if (type === 'video') {
+      if (url.includes('youtube.com') || url.includes('youtu.be')) {
+        const videoId = extractYouTubeId(url);
+        if (videoId) {
+          thumbnail = `https://img.youtube.com/vi/${videoId}/0.jpg`;
+        }
+      } else if (url.includes('vimeo.com')) {
+        // Vimeo thumbnail would need API call, using placeholder for now
+        thumbnail = '/api/placeholder/400/300';
+      }
+    }
+
+    const galleryItem = new Gallery({
+      title,
+      description,
+      type,
+      url,
+      sourceType: 'url',
+      category: category || 'general',
+      tags: tags ? tags.split(',').map(tag => tag.trim()) : [],
+      thumbnail,
+      uploadedBy: req.admin._id
+    });
+
+    const createdItem = await galleryItem.save();
+    res.status(201).json(createdItem);
   } catch (error) {
-    console.error('Error creating gallery item:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
   }
+};
+
+// Helper function to extract YouTube ID
+const extractYouTubeId = (url) => {
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
 };
 
 // @desc    Update gallery item
@@ -176,63 +170,29 @@ const createGalleryItem = async (req, res) => {
 // @access  Private/Admin
 const updateGalleryItem = async (req, res) => {
   try {
-    const item = await Gallery.findById(req.params.id);
+    const { title, description, category, tags, isActive, order } = req.body;
 
-    if (!item) {
-      return res.status(404).json({ message: 'Item not found' });
+    const galleryItem = await Gallery.findById(req.params.id);
+
+    if (!galleryItem) {
+      return res.status(404).json({ message: 'Gallery item not found' });
     }
 
-    // Update basic fields
-    item.title = req.body.title || item.title;
-    item.description = req.body.description !== undefined ? req.body.description : item.description;
-    item.category = req.body.category || item.category;
-
-    // Handle URL update
-    if (req.body.mediaUrl && isValidUrl(req.body.mediaUrl)) {
-      item.mediaUrl = req.body.mediaUrl;
-      item.mediaType = req.body.mediaType || detectMediaTypeFromUrl(req.body.mediaUrl);
-      
-      if (item.mediaType === 'video') {
-        if (item.mediaUrl.includes('youtube.com') || item.mediaUrl.includes('youtu.be')) {
-          const videoId = extractYoutubeId(item.mediaUrl);
-          if (videoId) {
-            item.thumbnailUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
-          }
-        }
-      }
-    }
-
-    // Handle file update
-    if (req.file) {
-      // Delete old file from cloudinary if exists
-      if (item.cloudinaryId) {
-        try {
-          const resourceType = item.mediaType === 'video' ? 'video' : 'image';
-          await cloudinary.uploader.destroy(item.cloudinaryId, { resource_type: resourceType });
-        } catch (cloudinaryError) {
-          console.error('Error deleting old file from Cloudinary:', cloudinaryError);
-        }
-      }
-      
-      item.mediaUrl = req.file.path;
-      item.cloudinaryId = req.file.filename;
-      item.mediaType = req.file.mimetype.startsWith('video/') ? 'video' : 'image';
-      
-      if (item.mediaType === 'video') {
-        item.thumbnailUrl = req.file.path.replace('/upload/', '/upload/w_400,h_300,c_fill/');
-      }
-    }
-
-    const updatedItem = await item.save();
+    // Update fields
+    galleryItem.title = title || galleryItem.title;
+    galleryItem.description = description || galleryItem.description;
+    galleryItem.category = category || galleryItem.category;
+    galleryItem.isActive = isActive !== undefined ? isActive : galleryItem.isActive;
+    galleryItem.order = order !== undefined ? order : galleryItem.order;
     
-    const responseItem = updatedItem.toObject();
-    if (updatedItem.mediaType === 'video') {
-      responseItem.embedUrl = getVideoEmbedUrl(updatedItem.mediaUrl);
+    if (tags) {
+      galleryItem.tags = tags.split(',').map(tag => tag.trim());
     }
 
-    res.json(responseItem);
+    const updatedItem = await galleryItem.save();
+    res.json(updatedItem);
   } catch (error) {
-    console.error('Error updating gallery item:', error);
+    console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
 };
@@ -242,26 +202,76 @@ const updateGalleryItem = async (req, res) => {
 // @access  Private/Admin
 const deleteGalleryItem = async (req, res) => {
   try {
-    const item = await Gallery.findById(req.params.id);
+    const galleryItem = await Gallery.findById(req.params.id);
 
-    if (!item) {
-      return res.status(404).json({ message: 'Item not found' });
+    if (!galleryItem) {
+      return res.status(404).json({ message: 'Gallery item not found' });
     }
 
-    // Delete from cloudinary if exists
-    if (item.cloudinaryId) {
+    // Delete from Cloudinary if it was uploaded
+    if (galleryItem.cloudinaryId) {
       try {
-        const resourceType = item.mediaType === 'video' ? 'video' : 'image';
-        await cloudinary.uploader.destroy(item.cloudinaryId, { resource_type: resourceType });
+        const resourceType = galleryItem.type === 'video' ? 'video' : 'image';
+        await cloudinary.uploader.destroy(galleryItem.cloudinaryId, { 
+          resource_type: resourceType 
+        });
       } catch (cloudinaryError) {
         console.error('Error deleting from Cloudinary:', cloudinaryError);
       }
     }
 
-    await item.deleteOne();
-    res.json({ message: 'Item removed successfully' });
+    await galleryItem.deleteOne();
+    res.json({ message: 'Gallery item removed' });
   } catch (error) {
-    console.error('Error deleting gallery item:', error);
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// @desc    Get all gallery items (admin)
+// @route   GET /api/gallery/admin
+// @access  Private/Admin
+const getAdminGalleryItems = async (req, res) => {
+  try {
+    const { type, category, search, page = 1, limit = 20, isActive } = req.query;
+    const query = {};
+
+    if (type) query.type = type;
+    if (category) query.category = category;
+    if (isActive !== undefined) query.isActive = isActive === 'true';
+    if (search) {
+      query.$text = { $search: search };
+    }
+
+    const items = await Gallery.find(query)
+      .sort({ createdAt: -1 })
+      .populate('uploadedBy', 'name email')
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await Gallery.countDocuments(query);
+
+    res.json({
+      items,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
+      total
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// @desc    Get gallery categories
+// @route   GET /api/gallery/categories
+// @access  Public
+const getCategories = async (req, res) => {
+  try {
+    const categories = await Gallery.distinct('category', { isActive: true });
+    res.json(categories);
+  } catch (error) {
+    console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
 };
@@ -270,6 +280,9 @@ module.exports = {
   getGalleryItems,
   getGalleryItemById,
   createGalleryItem,
+  createGalleryItemFromUrl,
   updateGalleryItem,
-  deleteGalleryItem
+  deleteGalleryItem,
+  getAdminGalleryItems,
+  getCategories
 };
