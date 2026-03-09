@@ -75,11 +75,18 @@ const createGalleryItem = async (req, res) => {
       
       // For videos, generate thumbnail (Cloudinary provides it automatically)
       if (type === 'video') {
-        thumbnail = cloudinary.url(cloudinaryId, {
-          resource_type: 'video',
-          format: 'jpg',
-          transformation: [{ width: 400, height: 300, crop: 'fill' }]
-        });
+        try {
+          // Get video thumbnail from Cloudinary
+          thumbnail = cloudinary.url(cloudinaryId, {
+            resource_type: 'video',
+            format: 'jpg',
+            transformation: [{ width: 400, height: 300, crop: 'fill' }]
+          });
+        } catch (thumbError) {
+          console.error('Error generating thumbnail:', thumbError);
+          // Fallback to a placeholder
+          thumbnail = '/api/placeholder/400/300';
+        }
       }
     } else {
       return res.status(400).json({ message: 'No file uploaded' });
@@ -101,8 +108,8 @@ const createGalleryItem = async (req, res) => {
     const createdItem = await galleryItem.save();
     res.status(201).json(createdItem);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
+    console.error('Error in createGalleryItem:', error);
+    res.status(500).json({ message: 'Server error: ' + error.message });
   }
 };
 
