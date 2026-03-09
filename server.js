@@ -19,23 +19,30 @@ const careerRoutes = require('./routes/careerRoutes');
 
 const app = express();
 
+
 // =============================
-// MIDDLEWARE
+// BODY PARSER
 // =============================
 
-// Body parser
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// CORS Configuration (Important for frontend connection)
+
+// =============================
+// SIMPLE CORS CONFIG WITH CREDENTIALS
+// =============================
+
 app.use(cors({
   origin: [
     "https://www.jadhavargroupofinstitute.in",
-    "http://localhost:3000"
-  ], // You can replace * with your frontend URL later
+    "http://localhost:3000",
+    "http://localhost:5173"
+  ],
   methods: ["GET", "POST", "PUT", "DELETE"],
-  allowedHeaders: ["Content-Type", "Authorization"]
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
 }));
+
 
 // =============================
 // ROOT ROUTE (Health Check)
@@ -57,9 +64,8 @@ app.get('/', (req, res) => {
     ]
   });
 });
-// Add this middleware before your routes to handle large file uploads
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+
 // =============================
 // API ROUTES
 // =============================
@@ -70,6 +76,7 @@ app.use('/api/announcements', announcementRoutes);
 app.use('/api/notices', noticeRoutes);
 app.use('/api/blogs', blogRoutes);
 app.use('/api/careers', careerRoutes);
+
 
 // =============================
 // GLOBAL ERROR HANDLER
@@ -83,6 +90,7 @@ app.use((err, req, res, next) => {
     ...(process.env.NODE_ENV === "development" && { stack: err.stack })
   });
 });
+
 
 // =============================
 // START SERVER
