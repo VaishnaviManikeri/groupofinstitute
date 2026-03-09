@@ -57,7 +57,9 @@ app.get('/', (req, res) => {
     ]
   });
 });
-
+// Add this middleware before your routes to handle large file uploads
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // =============================
 // API ROUTES
 // =============================

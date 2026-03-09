@@ -1,35 +1,25 @@
 const Gallery = require('../models/Gallery');
 const { cloudinary } = require('../config/cloudinary');
-const axios = require('axios');
-const urlValidator = require('validator');
+const validator = require('validator');
 
 // Helper function to validate URL
 const isValidUrl = (url) => {
-  try {
-    return urlValidator.isURL(url, {
-      protocols: ['http', 'https'],
-      require_protocol: true,
-      require_valid_protocol: true
-    });
-  } catch (error) {
-    return false;
-  }
+  return validator.isURL(url, {
+    protocols: ['http', 'https'],
+    require_protocol: true
+  });
 };
 
 // Helper function to detect media type from URL
 const detectMediaTypeFromUrl = (url) => {
-  if (!url) return 'image';
-  
-  const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.ogg', '.m4v', '.3gp'];
-  const videoPlatforms = ['youtube.com', 'youtu.be', 'vimeo.com', 'dailymotion.com', 'player.vimeo.com'];
+  const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.ogg'];
+  const videoPlatforms = ['youtube.com', 'youtu.be', 'vimeo.com', 'dailymotion.com'];
   const lowerUrl = url.toLowerCase();
   
-  // Check for video platforms
   if (videoPlatforms.some(platform => lowerUrl.includes(platform))) {
     return 'video';
   }
   
-  // Check for direct video file extensions
   if (videoExtensions.some(ext => lowerUrl.includes(ext))) {
     return 'video';
   }
@@ -46,11 +36,8 @@ const extractYoutubeId = (url) => {
 
 // Helper function to get video embed URL
 const getVideoEmbedUrl = (url) => {
-  if (!url) return url;
-  
   const lowerUrl = url.toLowerCase();
   
-  // YouTube
   if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) {
     const videoId = extractYoutubeId(url);
     if (videoId) {
@@ -58,32 +45,14 @@ const getVideoEmbedUrl = (url) => {
     }
   }
   
-  // Vimeo
   if (lowerUrl.includes('vimeo.com')) {
-    // Handle different Vimeo URL formats
-    let vimeoId = url.split('vimeo.com/')[1];
+    const vimeoId = url.split('vimeo.com/')[1]?.split('?')[0];
     if (vimeoId) {
-      // Remove any query parameters
-      vimeoId = vimeoId.split('?')[0];
       return `https://player.vimeo.com/video/${vimeoId}`;
     }
   }
   
-  // Direct video URL - ensure it's properly encoded
   return url;
-};
-
-// Helper function to validate if URL is accessible
-const validateMediaUrl = async (url) => {
-  if (!url) return false;
-  
-  try {
-    const response = await axios.head(url, { timeout: 5000 });
-    return response.status >= 200 && response.status < 300;
-  } catch (error) {
-    console.log('URL validation failed:', url, error.message);
-    return false;
-  }
 };
 
 // @desc    Get all gallery items
@@ -93,29 +62,21 @@ const getGalleryItems = async (req, res) => {
   try {
     const items = await Gallery.find().sort({ createdAt: -1 });
     
-    // Add embed URLs for videos and ensure media URLs are properly formatted
     const itemsWithEmbed = items.map(item => {
       const itemObj = item.toObject();
-      
-      // Ensure mediaUrl is properly formatted
-      if (itemObj.mediaUrl && !itemObj.mediaUrl.startsWith('http')) {
-        // If it's a relative path, prepend the appropriate base URL
-        if (process.env.BACKEND_URL) {
-          itemObj.mediaUrl = `${process.env.BACKEND_URL}${itemObj.mediaUrl}`;
-        }
-      }
-      
       if (item.mediaType === 'video') {
-        itemObj.embedUrl = getVideoEmbedUrl(item.mediaUrl);
+        return {
+          ...itemObj,
+          embedUrl: getVideoEmbedUrl(item.mediaUrl)
+        };
       }
-      
       return itemObj;
     });
     
     res.json(itemsWithEmbed);
   } catch (error) {
     console.error('Error fetching gallery items:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -125,42 +86,27 @@ const getGalleryItems = async (req, res) => {
 const getGalleryItemById = async (req, res) => {
   try {
     const item = await Gallery.findById(req.params.id);
-    
     if (!item) {
       return res.status(404).json({ message: 'Item not found' });
     }
     
     const responseItem = item.toObject();
-    
-    // Ensure mediaUrl is properly formatted
-    if (responseItem.mediaUrl && !responseItem.mediaUrl.startsWith('http')) {
-      if (process.env.BACKEND_URL) {
-        responseItem.mediaUrl = `${process.env.BACKEND_URL}${responseItem.mediaUrl}`;
-      }
-    }
-    
     if (item.mediaType === 'video') {
       responseItem.embedUrl = getVideoEmbedUrl(item.mediaUrl);
     }
-    
     res.json(responseItem);
   } catch (error) {
     console.error('Error fetching gallery item:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
-// @desc    Create gallery item (image or video)
+// @desc    Create gallery item
 // @route   POST /api/gallery
 // @access  Private/Admin
 const createGalleryItem = async (req, res) => {
   try {
     const { title, description, category, mediaType, mediaUrl } = req.body;
-    
-    // Validate required fields
-    if (!title) {
-      return res.status(400).json({ message: 'Title is required' });
-    }
     
     let finalMediaUrl = '';
     let finalMediaType = mediaType || 'image';
@@ -172,49 +118,36 @@ const createGalleryItem = async (req, res) => {
       finalMediaUrl = mediaUrl;
       finalMediaType = mediaType || detectMediaTypeFromUrl(mediaUrl);
       
-      // For YouTube/Vimeo URLs, generate thumbnail
       if (finalMediaType === 'video') {
         if (mediaUrl.includes('youtube.com') || mediaUrl.includes('youtu.be')) {
           const videoId = extractYoutubeId(mediaUrl);
           if (videoId) {
             thumbnailUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
           }
-        } else if (mediaUrl.includes('vimeo.com')) {
-          // For Vimeo, we'll use a placeholder or try to fetch thumbnail
-          thumbnailUrl = 'https://via.placeholder.com/640x360?text=Vimeo+Video';
         }
       }
     }
-    // Case 2: File upload
+    // Case 2: File upload via Cloudinary
     else if (req.file) {
-      // Check if we have Cloudinary response
-      if (req.file.path) {
-        finalMediaUrl = req.file.path;
-        cloudinaryId = req.file.filename || req.file.public_id;
-        
-        // Determine media type from mimetype
-        if (req.file.mimetype) {
-          finalMediaType = req.file.mimetype.startsWith('video/') ? 'video' : 'image';
-        }
-        
-        // Generate thumbnail for videos
-        if (finalMediaType === 'video') {
-          // Try to get thumbnail from Cloudinary video
-          thumbnailUrl = req.file.path.replace('/upload/', '/upload/w_400,h_300,c_fill/');
-        }
-      } else {
-        return res.status(400).json({ message: 'File upload failed' });
+      // Cloudinary stores the URL in req.file.path and public_id in req.file.filename
+      finalMediaUrl = req.file.path;
+      cloudinaryId = req.file.filename;
+      finalMediaType = req.file.mimetype.startsWith('video/') ? 'video' : 'image';
+      
+      // Generate thumbnail for videos
+      if (finalMediaType === 'video') {
+        // Cloudinary video thumbnail URL format
+        thumbnailUrl = req.file.path.replace('/upload/', '/upload/w_400,h_300,c_fill/');
       }
     }
     else {
       return res.status(400).json({ message: 'Please provide a file or valid URL' });
     }
 
-    // Validate that the media URL is accessible (optional, can be commented out for performance)
-    // const isValid = await validateMediaUrl(finalMediaUrl);
-    // if (!isValid) {
-    //   return res.status(400).json({ message: 'Media URL is not accessible' });
-    // }
+    // Validate required fields
+    if (!title) {
+      return res.status(400).json({ message: 'Title is required' });
+    }
 
     const galleryItem = await Gallery.create({
       title,
@@ -226,7 +159,6 @@ const createGalleryItem = async (req, res) => {
       thumbnailUrl
     });
 
-    // Add embedUrl for video response
     const responseItem = galleryItem.toObject();
     if (galleryItem.mediaType === 'video') {
       responseItem.embedUrl = getVideoEmbedUrl(galleryItem.mediaUrl);
@@ -235,11 +167,7 @@ const createGalleryItem = async (req, res) => {
     res.status(201).json(responseItem);
   } catch (error) {
     console.error('Error creating gallery item:', error);
-    res.status(500).json({ 
-      message: 'Server error', 
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
@@ -264,7 +192,6 @@ const updateGalleryItem = async (req, res) => {
       item.mediaUrl = req.body.mediaUrl;
       item.mediaType = req.body.mediaType || detectMediaTypeFromUrl(req.body.mediaUrl);
       
-      // Update thumbnail if it's a video URL
       if (item.mediaType === 'video') {
         if (item.mediaUrl.includes('youtube.com') || item.mediaUrl.includes('youtu.be')) {
           const videoId = extractYoutubeId(item.mediaUrl);
@@ -276,7 +203,7 @@ const updateGalleryItem = async (req, res) => {
     }
 
     // Handle file update
-    if (req.file && req.file.path) {
+    if (req.file) {
       // Delete old file from cloudinary if exists
       if (item.cloudinaryId) {
         try {
@@ -284,15 +211,13 @@ const updateGalleryItem = async (req, res) => {
           await cloudinary.uploader.destroy(item.cloudinaryId, { resource_type: resourceType });
         } catch (cloudinaryError) {
           console.error('Error deleting old file from Cloudinary:', cloudinaryError);
-          // Continue even if deletion fails
         }
       }
       
       item.mediaUrl = req.file.path;
-      item.cloudinaryId = req.file.filename || req.file.public_id;
+      item.cloudinaryId = req.file.filename;
       item.mediaType = req.file.mimetype.startsWith('video/') ? 'video' : 'image';
       
-      // Generate thumbnail for videos
       if (item.mediaType === 'video') {
         item.thumbnailUrl = req.file.path.replace('/upload/', '/upload/w_400,h_300,c_fill/');
       }
@@ -300,7 +225,6 @@ const updateGalleryItem = async (req, res) => {
 
     const updatedItem = await item.save();
     
-    // Add embedUrl for video response
     const responseItem = updatedItem.toObject();
     if (updatedItem.mediaType === 'video') {
       responseItem.embedUrl = getVideoEmbedUrl(updatedItem.mediaUrl);
@@ -309,7 +233,7 @@ const updateGalleryItem = async (req, res) => {
     res.json(responseItem);
   } catch (error) {
     console.error('Error updating gallery item:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -330,8 +254,7 @@ const deleteGalleryItem = async (req, res) => {
         const resourceType = item.mediaType === 'video' ? 'video' : 'image';
         await cloudinary.uploader.destroy(item.cloudinaryId, { resource_type: resourceType });
       } catch (cloudinaryError) {
-        console.error('Error deleting file from Cloudinary:', cloudinaryError);
-        // Continue even if deletion fails
+        console.error('Error deleting from Cloudinary:', cloudinaryError);
       }
     }
 
@@ -339,32 +262,7 @@ const deleteGalleryItem = async (req, res) => {
     res.json({ message: 'Item removed successfully' });
   } catch (error) {
     console.error('Error deleting gallery item:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
-  }
-};
-
-// @desc    Validate gallery item URL
-// @route   POST /api/gallery/validate
-// @access  Private/Admin
-const validateGalleryUrl = async (req, res) => {
-  try {
-    const { url } = req.body;
-    
-    if (!url) {
-      return res.status(400).json({ message: 'URL is required' });
-    }
-    
-    const isValid = await validateMediaUrl(url);
-    const mediaType = detectMediaTypeFromUrl(url);
-    
-    res.json({
-      valid: isValid,
-      mediaType,
-      url
-    });
-  } catch (error) {
-    console.error('Error validating URL:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -373,6 +271,5 @@ module.exports = {
   getGalleryItemById,
   createGalleryItem,
   updateGalleryItem,
-  deleteGalleryItem,
-  validateGalleryUrl
+  deleteGalleryItem
 };

@@ -32,14 +32,22 @@ const videoStorage = new CloudinaryStorage({
   }
 });
 
-const uploadImage = multer({ storage: imageStorage });
-const uploadVideo = multer({ storage: videoStorage });
+// Create separate upload middlewares
+const uploadImage = multer({ 
+  storage: imageStorage,
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+});
 
-// Generic upload middleware that handles both
+const uploadVideo = multer({ 
+  storage: videoStorage,
+  limits: { fileSize: 100 * 1024 * 1024 } // 100MB limit
+});
+
+// Dynamic upload based on file type
 const upload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => {
-      cb(null, '/tmp'); // Temporary storage
+      cb(null, '/tmp');
     },
     filename: (req, file, cb) => {
       cb(null, Date.now() + '-' + file.originalname);
@@ -47,4 +55,28 @@ const upload = multer({
   })
 });
 
-module.exports = { cloudinary, uploadImage, uploadVideo, upload };
+// Custom upload middleware that routes to appropriate Cloudinary storage
+const uploadToCloudinary = (req, res, next) => {
+  if (!req.file) {
+    return next();
+  }
+
+  const isVideo = req.file.mimetype.startsWith('video/');
+  const uploadMiddleware = isVideo ? uploadVideo.single('media') : uploadImage.single('media');
+  
+  uploadMiddleware(req, res, (err) => {
+    if (err) {
+      console.error('Upload error:', err);
+      return res.status(400).json({ message: 'File upload failed', error: err.message });
+    }
+    next();
+  });
+};
+
+module.exports = { 
+  cloudinary, 
+  uploadImage, 
+  uploadVideo, 
+  upload,
+  uploadToCloudinary 
+};

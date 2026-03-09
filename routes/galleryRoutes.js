@@ -8,15 +8,21 @@ const {
   deleteGalleryItem
 } = require('../controllers/galleryController');
 const { protect } = require('../middleware/auth');
-const { upload } = require('../config/cloudinary');
+const { uploadToCloudinary } = require('../config/cloudinary');
+
+// Debug middleware to log requests
+router.use((req, res, next) => {
+  console.log(`Gallery Route: ${req.method} ${req.originalUrl}`);
+  next();
+});
 
 router.route('/')
   .get(getGalleryItems)
-  .post(protect, upload.single('media'), createGalleryItem);
+  .post(protect, uploadToCloudinary, createGalleryItem);
 
 router.route('/:id')
   .get(getGalleryItemById)
-  .put(protect, upload.single('media'), updateGalleryItem)
+  .put(protect, uploadToCloudinary, updateGalleryItem)
   .delete(protect, deleteGalleryItem);
 
 module.exports = router;
