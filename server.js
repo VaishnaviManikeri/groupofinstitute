@@ -35,6 +35,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cors({
   origin: [
     "https://www.jadhavargroupofinstitute.in",
+    "https://jadhavargroupofinstitute.in",
     "http://localhost:3000",
     "http://localhost:5173"
   ],
