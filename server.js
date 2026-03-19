@@ -61,10 +61,18 @@ app.get('/', (req, res) => {
       "/api/notices",
       "/api/blogs",
       "/api/careers",
-        "/api/gallery"
-
+      "/api/gallery"
     ]
   });
+});
+
+
+// =============================
+// ✅ PING ROUTE (ADDED)
+// =============================
+
+app.get('/ping', (req, res) => {
+  res.send('✅ Server is alive');
 });
 
 
