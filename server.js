@@ -68,7 +68,7 @@ app.get('/', (req, res) => {
 
 
 // =============================
-// ✅ PING ROUTE (ADDED)
+// ✅ PING ROUTE
 // =============================
 
 app.get('/ping', (req, res) => {
@@ -77,8 +77,24 @@ app.get('/ping', (req, res) => {
 
 
 // =============================
+// ✅ HOSTINGER CHECK API (NEW)
+// =============================
+
+app.get('/hostinger-status', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "Hostinger VPS backend is running successfully 🚀",
+    port: process.env.PORT || 5015,
+    timestamp: new Date(),
+    server: "Node.js + Express"
+  });
+});
+
+
+// =============================
 // API ROUTES
 // =============================
+
 app.use('/api/gallery', galleryRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/announcements', announcementRoutes);
@@ -105,7 +121,8 @@ app.use((err, req, res, next) => {
 // START SERVER
 // =============================
 
-const PORT = process.env.PORT || 5000;
+// ✅ UPDATED PORT
+const PORT = process.env.PORT || 5015;
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
