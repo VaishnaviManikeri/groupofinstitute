@@ -58,11 +58,16 @@ const getGalleryItemById = async (req, res) => {
 };
 
 // @desc    Create gallery item (upload from file)
-// @route   POST /api/gallery
+// @route   POST /api/gallery/image or /api/gallery/video
 // @access  Private/Admin
 const createGalleryItem = async (req, res) => {
   try {
-    const { title, description, type, category, tags, sourceType = 'upload' } = req.body;
+    const { title, description, category, tags, sourceType = 'upload' } = req.body;
+    
+    // Determine type from route or body
+    let type = req.baseUrl.includes('/image') ? 'image' : 'video';
+    if (req.body.type) type = req.body.type;
+    if (req.body.mediaType) type = req.body.mediaType;
     
     let url = '';
     let cloudinaryId = '';
@@ -73,10 +78,9 @@ const createGalleryItem = async (req, res) => {
       url = req.file.path;
       cloudinaryId = req.file.filename;
       
-      // For videos, generate thumbnail (Cloudinary provides it automatically)
-      if (type === 'video') {
+      // For videos, generate thumbnail
+      if (type === 'video' && cloudinaryId) {
         try {
-          // Get video thumbnail from Cloudinary
           thumbnail = cloudinary.url(cloudinaryId, {
             resource_type: 'video',
             format: 'jpg',
@@ -84,7 +88,6 @@ const createGalleryItem = async (req, res) => {
           });
         } catch (thumbError) {
           console.error('Error generating thumbnail:', thumbError);
-          // Fallback to a placeholder
           thumbnail = '/api/placeholder/400/300';
         }
       }
@@ -101,8 +104,8 @@ const createGalleryItem = async (req, res) => {
       thumbnail,
       sourceType,
       category: category || 'general',
-      tags: tags ? tags.split(',').map(tag => tag.trim()) : [],
-      uploadedBy: req.admin._id
+      tags: tags ? (Array.isArray(tags) ? tags : tags.split(',').map(tag => tag.trim())) : [],
+      uploadedBy: req.admin?._id
     });
 
     const createdItem = await galleryItem.save();
