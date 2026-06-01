@@ -7,7 +7,7 @@ const axios = require('axios');
 // @access  Public
 const getGalleryItems = async (req, res) => {
   try {
-    const { type, category, search, page = 1, limit = 20 } = req.query;
+    const { type, category, search, page = 1, limit = 100 } = req.query;
     const query = { isActive: true };
 
     if (type) query.type = type;
@@ -18,16 +18,17 @@ const getGalleryItems = async (req, res) => {
 
     const items = await Gallery.find(query)
       .sort({ order: -1, createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit));
 
     const total = await Gallery.countDocuments(query);
 
     res.json({
       items,
       totalPages: Math.ceil(total / limit),
-      currentPage: page,
-      total
+      currentPage: parseInt(page),
+      total,
+      limit: parseInt(limit)
     });
   } catch (error) {
     console.error(error);
@@ -466,16 +467,17 @@ const getAdminGalleryItems = async (req, res) => {
     const items = await Gallery.find(query)
       .sort({ createdAt: -1 })
       .populate('uploadedBy', 'name email')
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit));
 
     const total = await Gallery.countDocuments(query);
 
     res.json({
       items,
       totalPages: Math.ceil(total / limit),
-      currentPage: page,
-      total
+      currentPage: parseInt(page),
+      total,
+      limit: parseInt(limit)
     });
   } catch (error) {
     console.error(error);
