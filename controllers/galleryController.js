@@ -1,13 +1,12 @@
 const Gallery = require('../models/Gallery');
 const { cloudinary } = require('../config/cloudinary');
 const axios = require('axios');
-
 // @desc    Get all gallery items
 // @route   GET /api/gallery
 // @access  Public
 const getGalleryItems = async (req, res) => {
   try {
-    const { type, category, search, page = 1, limit = 100 } = req.query;
+    const { type, category, search } = req.query;
     const query = { isActive: true };
 
     if (type) query.type = type;
@@ -16,25 +15,23 @@ const getGalleryItems = async (req, res) => {
       query.$text = { $search: search };
     }
 
+    // Remove limit to get ALL items
     const items = await Gallery.find(query)
-      .sort({ order: -1, createdAt: -1 })
-      .limit(parseInt(limit))
-      .skip((parseInt(page) - 1) * parseInt(limit));
+      .sort({ order: -1, createdAt: -1 });
 
-    const total = await Gallery.countDocuments(query);
+    const total = items.length;
 
     res.json({
       items,
-      totalPages: Math.ceil(total / limit),
-      currentPage: parseInt(page),
       total,
-      limit: parseInt(limit)
+      message: "All gallery items fetched successfully"
     });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
 };
+
 
 // @desc    Get single gallery item
 // @route   GET /api/gallery/:id
@@ -454,7 +451,7 @@ const deleteGalleryItem = async (req, res) => {
 // @access  Private/Admin
 const getAdminGalleryItems = async (req, res) => {
   try {
-    const { type, category, search, page = 1, limit = 20, isActive } = req.query;
+    const { type, category, search, isActive } = req.query;
     const query = {};
 
     if (type) query.type = type;
@@ -464,20 +461,17 @@ const getAdminGalleryItems = async (req, res) => {
       query.$text = { $search: search };
     }
 
+    // Remove limit to get ALL items for admin
     const items = await Gallery.find(query)
       .sort({ createdAt: -1 })
-      .populate('uploadedBy', 'name email')
-      .limit(parseInt(limit))
-      .skip((parseInt(page) - 1) * parseInt(limit));
+      .populate('uploadedBy', 'name email');
 
-    const total = await Gallery.countDocuments(query);
+    const total = items.length;
 
     res.json({
       items,
-      totalPages: Math.ceil(total / limit),
-      currentPage: parseInt(page),
       total,
-      limit: parseInt(limit)
+      message: "All gallery items fetched successfully"
     });
   } catch (error) {
     console.error(error);
