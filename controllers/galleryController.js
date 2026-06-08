@@ -410,24 +410,89 @@ const getCategories = async (req, res) => {
   }
 };
 // Add this function to galleryController.js
+// Add this function to galleryController.js (at the end, before module.exports)
+
+// @desc    Get gallery statistics and count (for debugging)
+// @route   GET /api/gallery/debug/count
+// @access  Private/Admin
 const getGalleryCount = async (req, res) => {
   try {
+    console.log('🔍 Debug: Fetching gallery statistics...');
+    
+    // Get total counts
     const totalCount = await Gallery.countDocuments();
     const activeCount = await Gallery.countDocuments({ isActive: true });
+    const inactiveCount = await Gallery.countDocuments({ isActive: false });
+    
+    // Get counts by type
+    const imageCount = await Gallery.countDocuments({ type: 'image', isActive: true });
+    const videoCount = await Gallery.countDocuments({ type: 'video', isActive: true });
+    
+    // Get counts by category
+    const categories = await Gallery.aggregate([
+      { $match: { isActive: true } },
+      { $group: { _id: '$category', count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+    
+    // Get the 5 most recent items
+    const recentItems = await Gallery.find({ isActive: true })
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .select('title type category createdAt');
+    
+    // Get the 5 oldest items
+    const oldestItems = await Gallery.find({ isActive: true })
+      .sort({ createdAt: 1 })
+      .limit(5)
+      .select('title type category createdAt');
+    
+    // Check database stats (if MongoDB allows)
+    let dbStats = null;
+    try {
+      const db = Gallery.db;
+      const stats = await db.stats();
+      dbStats = {
+        dataSize: stats.dataSize,
+        indexSize: stats.indexSize,
+        totalSize: stats.totalSize,
+        objectCount: stats.objects,
+        collections: stats.collections
+      };
+    } catch (err) {
+      dbStats = { error: 'Could not fetch DB stats' };
+    }
+    
+    console.log(`📊 Gallery Stats: Total=${totalCount}, Active=${activeCount}, Inactive=${inactiveCount}`);
     
     res.json({
       success: true,
-      totalItems: totalCount,
-      activeItems: activeCount,
-      message: `Total ${totalCount} items in database`
+      statistics: {
+        total: {
+          all: totalCount,
+          active: activeCount,
+          inactive: inactiveCount
+        },
+        byType: {
+          images: imageCount,
+          videos: videoCount
+        },
+        byCategory: categories,
+        recentItems: recentItems,
+        oldestItems: oldestItems,
+        databaseStats: dbStats,
+        message: `Successfully fetched gallery statistics. Total ${totalCount} items in database.`
+      }
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('❌ Error in getGalleryCount:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error fetching gallery statistics',
+      error: error.message 
+    });
   }
 };
-
-// Add this route to galleryRoutes.js
-router.get('/debug/count', protect, getGalleryCount);
 
 module.exports = {
   getGalleryItems,
@@ -437,5 +502,6 @@ module.exports = {
   updateGalleryItem,
   deleteGalleryItem,
   getAdminGalleryItems,
-  getCategories
+  getCategories,
+  getGalleryCount  // Add this line
 };
