@@ -409,8 +409,7 @@ const getCategories = async (req, res) => {
     });
   }
 };
-// Add this function to galleryController.js
-// Add this function to galleryController.js (at the end, before module.exports)
+// At the END of your galleryController.js file, add this function:
 
 // @desc    Get gallery statistics and count (for debugging)
 // @route   GET /api/gallery/debug/count
@@ -494,6 +493,7 @@ const getGalleryCount = async (req, res) => {
   }
 };
 
+// Make sure module.exports includes getGalleryCount
 module.exports = {
   getGalleryItems,
   getGalleryItemById,
@@ -503,5 +503,5 @@ module.exports = {
   deleteGalleryItem,
   getAdminGalleryItems,
   getCategories,
-  getGalleryCount  // Add this line
+  getGalleryCount  // MAKE SURE THIS LINE EXISTS
 };
