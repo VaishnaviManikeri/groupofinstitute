@@ -10,7 +10,8 @@ const {
   updateGalleryItem,
   deleteGalleryItem,
   getAdminGalleryItems,
-  getCategories
+  getCategories,
+  getGalleryCount  // ADD THIS LINE - IMPORT THE FUNCTION
 } = require('../controllers/galleryController');
 
 // =============================
@@ -19,7 +20,11 @@ const {
 router.get('/', getGalleryItems);
 router.get('/categories', getCategories);
 router.get('/:id', getGalleryItemById);
-router.get('/debug/count', protect, getGalleryCount);
+
+// =============================
+// DEBUG ROUTES (Admin only)
+// =============================
+router.get('/debug/count', protect, getGalleryCount);  // NOW getGalleryCount IS DEFINED
 
 // =============================
 // ADMIN ROUTES (Authentication required)
@@ -36,36 +41,28 @@ router.post('/image', protect, uploadImage.single('file'), createGalleryItem);
 router.post('/video', protect, uploadVideo.single('file'), createGalleryItem);
 
 // Generic POST route for backward compatibility
-// This handles both file uploads and FormData from frontend
 router.post('/', protect, async (req, res, next) => {
   try {
     // Check if it's a URL upload
     if (req.body.mediaUrl || req.body.url) {
-      // Convert frontend field names to backend expected fields
       req.body.url = req.body.mediaUrl || req.body.url;
       req.body.type = req.body.mediaType || req.body.type;
       return createGalleryItemFromUrl(req, res);
     } 
     // Check if it's a file upload
     else if (req.files || req.file || (req.body.media && req.body.media !== 'null')) {
-      // Determine media type
       const mediaType = req.body.mediaType || req.body.type || 'image';
-      
-      // Choose appropriate upload middleware based on type
       const uploader = mediaType === 'video' ? uploadVideo : uploadImage;
       
-      // Process the upload
       return uploader.single('media')(req, res, (err) => {
         if (err) {
           console.error('Upload error:', err);
           return res.status(400).json({ message: 'File upload failed: ' + err.message });
         }
-        // After upload, call createGalleryItem
         return createGalleryItem(req, res);
       });
     }
     
-    // No valid data provided
     return res.status(400).json({ 
       message: 'Invalid request. Please provide either a file upload or a URL.',
       receivedBody: req.body,
@@ -92,7 +89,6 @@ router.post('/', protect, async (req, res, next) => {
 // Update gallery item
 router.put('/:id', protect, async (req, res, next) => {
   try {
-    // Convert frontend field names to backend expected fields
     if (req.body.mediaType) {
       req.body.type = req.body.mediaType;
       delete req.body.mediaType;
@@ -127,6 +123,7 @@ router.get('/health/check', (req, res) => {
       ],
       admin: [
         'GET /admin/all',
+        'GET /debug/count',
         'POST /',
         'POST /image',
         'POST /video',
