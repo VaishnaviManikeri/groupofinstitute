@@ -1,8 +1,7 @@
 const Gallery = require('../models/Gallery');
 const { cloudinary } = require('../config/cloudinary');
-const axios = require('axios');
 
-// @desc    Get all gallery items (UNLIMITED - No pagination)
+// @desc    Get all gallery items (UNLIMITED)
 // @route   GET /api/gallery
 // @access  Public
 const getGalleryItems = async (req, res) => {
@@ -16,20 +15,19 @@ const getGalleryItems = async (req, res) => {
       query.$text = { $search: search };
     }
 
-    // NO LIMIT - Get ALL items
-    const items = await Gallery.find(query)
-      .sort({ order: -1, createdAt: -1 });
+    // Get ALL items with NO LIMITS
+    const items = await Gallery.find(query).sort({ order: -1, createdAt: -1 });
 
-    const total = items.length;
+    console.log(`📸 Fetching gallery items: ${items.length} items found`);
 
     res.json({
       success: true,
-      items,
-      total,
-      message: "All gallery items fetched successfully"
+      items: items,
+      total: items.length,
+      message: `Successfully fetched ${items.length} gallery items`
     });
   } catch (error) {
-    console.error(error);
+    console.error('Error in getGalleryItems:', error);
     res.status(500).json({ 
       success: false,
       message: 'Server error fetching gallery items',
@@ -76,138 +74,72 @@ const getGalleryItemById = async (req, res) => {
 const createGalleryItem = async (req, res) => {
   try {
     console.log('📸 Creating gallery item...');
-    console.log('Request body:', req.body);
-    console.log('Request file:', req.file ? {
-      originalname: req.file.originalname,
-      mimetype: req.file.mimetype,
-      size: req.file.size,
-      path: req.file.path,
-      filename: req.file.filename
-    } : 'No file');
-    console.log('Request URL:', req.originalUrl);
-    console.log('Request method:', req.method);
     
-    // Extract data from request body
-    const { 
-      title, 
-      description, 
-      category, 
-      tags, 
-      sourceType = 'upload',
-      mediaType // For compatibility with frontend
-    } = req.body;
+    const { title, description, category, tags, mediaType } = req.body;
     
     // Validate required fields
     if (!title || title.trim() === '') {
       return res.status(400).json({ 
         success: false,
-        message: 'Title is required',
-        receivedData: req.body 
+        message: 'Title is required'
       });
     }
     
     if (!req.file) {
       return res.status(400).json({ 
         success: false,
-        message: 'No file uploaded. Please select a file to upload.',
-        receivedData: req.body 
+        message: 'No file uploaded. Please select a file to upload.'
       });
     }
     
-    // Determine media type from route or body
-    let type = 'image'; // Default to image
-    
-    // Check from URL path
+    // Determine media type
+    let type = 'image';
     if (req.originalUrl && req.originalUrl.includes('/video')) {
       type = 'video';
-    }
-    // Check from body
-    else if (mediaType) {
+    } else if (mediaType) {
       type = mediaType;
     }
-    else if (req.body.type) {
-      type = req.body.type;
-    }
     
-    console.log(`📹 Media type determined: ${type}`);
-    
-    // Validate file type matches media type
-    if (type === 'image' && !req.file.mimetype.startsWith('image/')) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'File type mismatch. Expected image but received: ' + req.file.mimetype 
-      });
-    }
-    
-    if (type === 'video' && !req.file.mimetype.startsWith('video/')) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'File type mismatch. Expected video but received: ' + req.file.mimetype 
-      });
-    }
+    console.log(`📹 Media type: ${type}`);
     
     let url = '';
     let cloudinaryId = '';
     let thumbnail = '';
     
-    // Process file based on upload method
+    // Process file
     if (req.file) {
-      // Check if file was uploaded to Cloudinary or local storage
       if (req.file.path && (req.file.path.includes('cloudinary') || req.file.path.startsWith('http'))) {
-        // Cloudinary upload
         url = req.file.path;
         cloudinaryId = req.file.filename || req.file.public_id;
-        
         console.log('✅ File uploaded to Cloudinary:', url);
         
-        // For videos, generate thumbnail from Cloudinary
         if (type === 'video' && cloudinaryId) {
           try {
             thumbnail = cloudinary.url(cloudinaryId, {
               resource_type: 'video',
               format: 'jpg',
-              transformation: [
-                { width: 400, height: 300, crop: 'fill', quality: 'auto' }
-              ]
+              transformation: [{ width: 400, height: 300, crop: 'fill', quality: 'auto' }]
             });
-            console.log('🎬 Generated video thumbnail:', thumbnail);
           } catch (thumbError) {
-            console.error('Error generating thumbnail from Cloudinary:', thumbError);
             thumbnail = 'https://via.placeholder.com/400x300?text=Video+Thumbnail';
           }
         }
-      } 
-      else if (req.file.path && !req.file.path.includes('cloudinary')) {
-        // Local file upload - generate URL for local access
+      } else {
         const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 5015}`;
         url = `${baseUrl}/uploads/${type}s/${req.file.filename}`;
         cloudinaryId = req.file.filename;
-        
         console.log('✅ File saved locally:', url);
         
-        // For local videos, use placeholder thumbnail
         if (type === 'video') {
           thumbnail = 'https://via.placeholder.com/400x300?text=Video+Thumbnail';
         }
       }
-      else {
-        // Unknown file source
-        return res.status(400).json({ 
-          success: false,
-          message: 'File upload source not recognized',
-          fileInfo: req.file
-        });
-      }
     }
     
-    // Parse tags (handle both string and array)
+    // Parse tags
     let tagsArray = [];
     if (tags) {
-      if (Array.isArray(tags)) {
-        tagsArray = tags;
-      } else if (typeof tags === 'string') {
-        tagsArray = tags.split(',').map(tag => tag.trim()).filter(tag => tag);
-      }
+      tagsArray = typeof tags === 'string' ? tags.split(',').map(tag => tag.trim()) : tags;
     }
     
     // Create gallery item
@@ -218,33 +150,16 @@ const createGalleryItem = async (req, res) => {
       url: url,
       cloudinaryId: cloudinaryId,
       thumbnail: thumbnail,
-      sourceType: sourceType,
       category: category || 'general',
       tags: tagsArray,
       uploadedBy: req.admin?._id || req.admin?.id || null,
       isActive: true,
       views: 0,
-      order: 0
+      order: Date.now() // Use timestamp for ordering
     });
-    
-    // Validate gallery item before saving
-    const validationError = galleryItem.validateSync();
-    if (validationError) {
-      console.error('Validation error:', validationError);
-      return res.status(400).json({ 
-        success: false,
-        message: 'Validation failed', 
-        errors: validationError.errors 
-      });
-    }
     
     const createdItem = await galleryItem.save();
-    console.log('✅ Gallery item created successfully:', {
-      id: createdItem._id,
-      title: createdItem.title,
-      type: createdItem.type,
-      url: createdItem.url
-    });
+    console.log('✅ Gallery item created successfully, Total items now:', await Gallery.countDocuments());
     
     res.status(201).json({
       success: true,
@@ -254,40 +169,10 @@ const createGalleryItem = async (req, res) => {
     
   } catch (error) {
     console.error('❌ Error in createGalleryItem:', error);
-    console.error('Error stack:', error.stack);
-    
-    // Specific error handling
-    if (error.name === 'ValidationError') {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Validation Error', 
-        errors: Object.values(error.errors).map(e => e.message),
-        details: error.message
-      });
-    }
-    
-    if (error.code === 11000) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Duplicate entry error',
-        details: 'An item with this data already exists'
-      });
-    }
-    
-    // Send detailed error for debugging
     res.status(500).json({ 
       success: false,
       message: 'Server error while creating gallery item',
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
-      details: {
-        body: req.body,
-        file: req.file ? {
-          originalname: req.file.originalname,
-          mimetype: req.file.mimetype,
-          size: req.file.size
-        } : null
-      }
+      error: error.message 
     });
   }
 };
@@ -298,7 +183,6 @@ const createGalleryItem = async (req, res) => {
 const createGalleryItemFromUrl = async (req, res) => {
   try {
     console.log('🔗 Creating gallery item from URL...');
-    console.log('Request body:', req.body);
     
     const { title, description, type, url, category, tags } = req.body;
 
@@ -316,36 +200,20 @@ const createGalleryItemFromUrl = async (req, res) => {
       });
     }
 
-    // Validate URL format
-    try {
-      new URL(url);
-    } catch (err) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Invalid URL format. Please enter a valid URL.' 
-      });
-    }
-
     let mediaType = type || 'image';
     let thumbnail = '';
     
-    // For videos, try to extract thumbnail from YouTube/Vimeo
     if (mediaType === 'video') {
       if (url.includes('youtube.com') || url.includes('youtu.be')) {
         const videoId = extractYouTubeId(url);
         if (videoId) {
           thumbnail = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
-          console.log('🎬 YouTube thumbnail generated:', thumbnail);
         }
-      } else if (url.includes('vimeo.com')) {
-        // Vimeo thumbnail would need API call, using placeholder
-        thumbnail = 'https://via.placeholder.com/400x300?text=Vimeo+Video';
       } else {
         thumbnail = 'https://via.placeholder.com/400x300?text=Video+Thumbnail';
       }
     }
 
-    // Parse tags
     let tagsArray = [];
     if (tags) {
       tagsArray = typeof tags === 'string' ? tags.split(',').map(tag => tag.trim()) : tags;
@@ -356,18 +224,17 @@ const createGalleryItemFromUrl = async (req, res) => {
       description: description ? description.trim() : '',
       type: mediaType,
       url: url,
-      sourceType: 'url',
       category: category || 'general',
       tags: tagsArray,
       thumbnail: thumbnail,
       uploadedBy: req.admin?._id || req.admin?.id || null,
       isActive: true,
       views: 0,
-      order: 0
+      order: Date.now()
     });
 
     const createdItem = await galleryItem.save();
-    console.log('✅ Gallery item created from URL successfully:', createdItem._id);
+    console.log('✅ Gallery item created from URL successfully, Total items:', await Gallery.countDocuments());
     
     res.status(201).json({
       success: true,
@@ -397,7 +264,6 @@ const extractYouTubeId = (url) => {
 const updateGalleryItem = async (req, res) => {
   try {
     console.log('✏️ Updating gallery item:', req.params.id);
-    console.log('Update data:', req.body);
     
     const { title, description, category, tags, isActive, order, type, url } = req.body;
 
@@ -410,7 +276,6 @@ const updateGalleryItem = async (req, res) => {
       });
     }
 
-    // Update fields if provided
     if (title) galleryItem.title = title.trim();
     if (description !== undefined) galleryItem.description = description ? description.trim() : '';
     if (category) galleryItem.category = category;
@@ -424,7 +289,7 @@ const updateGalleryItem = async (req, res) => {
     }
 
     const updatedItem = await galleryItem.save();
-    console.log('✅ Gallery item updated successfully:', updatedItem._id);
+    console.log('✅ Gallery item updated successfully');
     
     res.json({
       success: true,
@@ -457,17 +322,15 @@ const deleteGalleryItem = async (req, res) => {
       });
     }
 
-    // Delete from Cloudinary if it was uploaded and cloudinaryId exists
     if (galleryItem.cloudinaryId && cloudinary) {
       try {
         const resourceType = galleryItem.type === 'video' ? 'video' : 'image';
-        const result = await cloudinary.uploader.destroy(galleryItem.cloudinaryId, { 
+        await cloudinary.uploader.destroy(galleryItem.cloudinaryId, { 
           resource_type: resourceType 
         });
-        console.log('✅ Deleted from Cloudinary:', result);
+        console.log('✅ Deleted from Cloudinary');
       } catch (cloudinaryError) {
         console.error('⚠️ Error deleting from Cloudinary:', cloudinaryError);
-        // Continue with deletion even if Cloudinary delete fails
       }
     }
 
@@ -488,7 +351,7 @@ const deleteGalleryItem = async (req, res) => {
   }
 };
 
-// @desc    Get all gallery items for admin (UNLIMITED - No pagination)
+// @desc    Get all gallery items for admin (UNLIMITED)
 // @route   GET /api/gallery/admin/all
 // @access  Private/Admin
 const getAdminGalleryItems = async (req, res) => {
@@ -503,18 +366,18 @@ const getAdminGalleryItems = async (req, res) => {
       query.$text = { $search: search };
     }
 
-    // NO LIMIT - Get ALL items for admin
+    // Get ALL items with NO LIMITS
     const items = await Gallery.find(query)
       .sort({ createdAt: -1 })
       .populate('uploadedBy', 'name email');
 
-    const total = items.length;
+    console.log(`📸 Admin fetching gallery items: ${items.length} items found`);
 
     res.json({
       success: true,
-      items,
-      total,
-      message: "All gallery items fetched successfully for admin"
+      items: items,
+      total: items.length,
+      message: `Successfully fetched ${items.length} gallery items`
     });
   } catch (error) {
     console.error(error);
@@ -534,7 +397,7 @@ const getCategories = async (req, res) => {
     const categories = await Gallery.distinct('category', { isActive: true });
     res.json({
       success: true,
-      categories,
+      categories: categories,
       total: categories.length
     });
   } catch (error) {
