@@ -1,7 +1,8 @@
 const Gallery = require('../models/Gallery');
 const { cloudinary } = require('../config/cloudinary');
 const axios = require('axios');
-// @desc    Get all gallery items
+
+// @desc    Get all gallery items (UNLIMITED - No pagination)
 // @route   GET /api/gallery
 // @access  Public
 const getGalleryItems = async (req, res) => {
@@ -15,23 +16,27 @@ const getGalleryItems = async (req, res) => {
       query.$text = { $search: search };
     }
 
-    // Remove limit to get ALL items
+    // NO LIMIT - Get ALL items
     const items = await Gallery.find(query)
       .sort({ order: -1, createdAt: -1 });
 
     const total = items.length;
 
     res.json({
+      success: true,
       items,
       total,
       message: "All gallery items fetched successfully"
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error fetching gallery items',
+      error: error.message 
+    });
   }
 };
-
 
 // @desc    Get single gallery item
 // @route   GET /api/gallery/:id
@@ -41,17 +46,27 @@ const getGalleryItemById = async (req, res) => {
     const item = await Gallery.findById(req.params.id);
     
     if (!item) {
-      return res.status(404).json({ message: 'Gallery item not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Gallery item not found' 
+      });
     }
 
     // Increment views
     item.views += 1;
     await item.save();
 
-    res.json(item);
+    res.json({
+      success: true,
+      data: item
+    });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error fetching gallery item',
+      error: error.message 
+    });
   }
 };
 
@@ -85,6 +100,7 @@ const createGalleryItem = async (req, res) => {
     // Validate required fields
     if (!title || title.trim() === '') {
       return res.status(400).json({ 
+        success: false,
         message: 'Title is required',
         receivedData: req.body 
       });
@@ -92,6 +108,7 @@ const createGalleryItem = async (req, res) => {
     
     if (!req.file) {
       return res.status(400).json({ 
+        success: false,
         message: 'No file uploaded. Please select a file to upload.',
         receivedData: req.body 
       });
@@ -117,12 +134,14 @@ const createGalleryItem = async (req, res) => {
     // Validate file type matches media type
     if (type === 'image' && !req.file.mimetype.startsWith('image/')) {
       return res.status(400).json({ 
+        success: false,
         message: 'File type mismatch. Expected image but received: ' + req.file.mimetype 
       });
     }
     
     if (type === 'video' && !req.file.mimetype.startsWith('video/')) {
       return res.status(400).json({ 
+        success: false,
         message: 'File type mismatch. Expected video but received: ' + req.file.mimetype 
       });
     }
@@ -174,6 +193,7 @@ const createGalleryItem = async (req, res) => {
       else {
         // Unknown file source
         return res.status(400).json({ 
+          success: false,
           message: 'File upload source not recognized',
           fileInfo: req.file
         });
@@ -212,6 +232,7 @@ const createGalleryItem = async (req, res) => {
     if (validationError) {
       console.error('Validation error:', validationError);
       return res.status(400).json({ 
+        success: false,
         message: 'Validation failed', 
         errors: validationError.errors 
       });
@@ -238,6 +259,7 @@ const createGalleryItem = async (req, res) => {
     // Specific error handling
     if (error.name === 'ValidationError') {
       return res.status(400).json({ 
+        success: false,
         message: 'Validation Error', 
         errors: Object.values(error.errors).map(e => e.message),
         details: error.message
@@ -246,6 +268,7 @@ const createGalleryItem = async (req, res) => {
     
     if (error.code === 11000) {
       return res.status(400).json({ 
+        success: false,
         message: 'Duplicate entry error',
         details: 'An item with this data already exists'
       });
@@ -253,6 +276,7 @@ const createGalleryItem = async (req, res) => {
     
     // Send detailed error for debugging
     res.status(500).json({ 
+      success: false,
       message: 'Server error while creating gallery item',
       error: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
@@ -279,18 +303,27 @@ const createGalleryItemFromUrl = async (req, res) => {
     const { title, description, type, url, category, tags } = req.body;
 
     if (!title || title.trim() === '') {
-      return res.status(400).json({ message: 'Title is required' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'Title is required' 
+      });
     }
 
     if (!url || url.trim() === '') {
-      return res.status(400).json({ message: 'URL is required' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'URL is required' 
+      });
     }
 
     // Validate URL format
     try {
       new URL(url);
     } catch (err) {
-      return res.status(400).json({ message: 'Invalid URL format. Please enter a valid URL.' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'Invalid URL format. Please enter a valid URL.' 
+      });
     }
 
     let mediaType = type || 'image';
@@ -344,6 +377,7 @@ const createGalleryItemFromUrl = async (req, res) => {
   } catch (error) {
     console.error('❌ Error in createGalleryItemFromUrl:', error);
     res.status(500).json({ 
+      success: false,
       message: 'Server error while creating gallery item from URL',
       error: error.message 
     });
@@ -370,7 +404,10 @@ const updateGalleryItem = async (req, res) => {
     const galleryItem = await Gallery.findById(req.params.id);
 
     if (!galleryItem) {
-      return res.status(404).json({ message: 'Gallery item not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Gallery item not found' 
+      });
     }
 
     // Update fields if provided
@@ -397,6 +434,7 @@ const updateGalleryItem = async (req, res) => {
   } catch (error) {
     console.error('❌ Error in updateGalleryItem:', error);
     res.status(500).json({ 
+      success: false,
       message: 'Server error while updating gallery item',
       error: error.message 
     });
@@ -413,7 +451,10 @@ const deleteGalleryItem = async (req, res) => {
     const galleryItem = await Gallery.findById(req.params.id);
 
     if (!galleryItem) {
-      return res.status(404).json({ message: 'Gallery item not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Gallery item not found' 
+      });
     }
 
     // Delete from Cloudinary if it was uploaded and cloudinaryId exists
@@ -440,13 +481,14 @@ const deleteGalleryItem = async (req, res) => {
   } catch (error) {
     console.error('❌ Error in deleteGalleryItem:', error);
     res.status(500).json({ 
+      success: false,
       message: 'Server error while deleting gallery item',
       error: error.message 
     });
   }
 };
 
-// @desc    Get all gallery items (admin)
+// @desc    Get all gallery items for admin (UNLIMITED - No pagination)
 // @route   GET /api/gallery/admin/all
 // @access  Private/Admin
 const getAdminGalleryItems = async (req, res) => {
@@ -461,7 +503,7 @@ const getAdminGalleryItems = async (req, res) => {
       query.$text = { $search: search };
     }
 
-    // Remove limit to get ALL items for admin
+    // NO LIMIT - Get ALL items for admin
     const items = await Gallery.find(query)
       .sort({ createdAt: -1 })
       .populate('uploadedBy', 'name email');
@@ -469,13 +511,18 @@ const getAdminGalleryItems = async (req, res) => {
     const total = items.length;
 
     res.json({
+      success: true,
       items,
       total,
-      message: "All gallery items fetched successfully"
+      message: "All gallery items fetched successfully for admin"
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error fetching admin gallery items',
+      error: error.message 
+    });
   }
 };
 
@@ -485,10 +532,18 @@ const getAdminGalleryItems = async (req, res) => {
 const getCategories = async (req, res) => {
   try {
     const categories = await Gallery.distinct('category', { isActive: true });
-    res.json(categories);
+    res.json({
+      success: true,
+      categories,
+      total: categories.length
+    });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error fetching categories',
+      error: error.message 
+    });
   }
 };
 
