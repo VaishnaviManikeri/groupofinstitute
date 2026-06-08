@@ -409,6 +409,25 @@ const getCategories = async (req, res) => {
     });
   }
 };
+// Add this function to galleryController.js
+const getGalleryCount = async (req, res) => {
+  try {
+    const totalCount = await Gallery.countDocuments();
+    const activeCount = await Gallery.countDocuments({ isActive: true });
+    
+    res.json({
+      success: true,
+      totalItems: totalCount,
+      activeItems: activeCount,
+      message: `Total ${totalCount} items in database`
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Add this route to galleryRoutes.js
+router.get('/debug/count', protect, getGalleryCount);
 
 module.exports = {
   getGalleryItems,
