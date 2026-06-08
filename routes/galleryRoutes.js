@@ -19,6 +19,7 @@ const {
 router.get('/', getGalleryItems);
 router.get('/categories', getCategories);
 router.get('/:id', getGalleryItemById);
+router.get('/debug/count', protect, getGalleryCount);
 
 // =============================
 // ADMIN ROUTES (Authentication required)
